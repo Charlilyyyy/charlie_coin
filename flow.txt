@@ -1,0 +1,106 @@
+========== Charlie Coin Node Flow ==========
+
+1. Program Start (Node Initialization)
+   ✅ COMPLETED
+   - Node starts up
+   - Display node information (Node ID, peer nodes)
+   - Initialize RocksDB connection
+
+2. Load Blockchain
+   ✅ COMPLETED (Architecture designed)
+   - Read blockchain data from storage
+   - Verify blockchain integrity
+   - Get current blockchain height
+
+3. Load UTXO Set with Checkpoint System
+   ✅ COMPLETED
+   
+   A. Check Checkpoint
+      - Query RocksDB for last processed block height
+      - Read checkpoint metadata (key: "_checkpoint_")
+      
+   B. COLD START (First Run - No Checkpoint)
+      - Checkpoint returns -1 (not found)
+      - Start from Genesis block (block 0)
+      - Process ALL blocks sequentially:
+        * For each block:
+          - Process all transactions
+          - Add new UTXOs (transaction outputs)
+          - Remove spent UTXOs (transaction inputs)
+          - Save checkpoint after each block
+      - Calculate complete UTXO set
+      - Save final checkpoint
+      
+   C. WARM START (Restart - Checkpoint Exists)
+      - Load checkpoint (e.g., last processed = block 100)
+      - UTXO set already exists in RocksDB (cached state)
+      - NO need to recalculate from genesis! ⚡
+      - Check if new blocks exist:
+        * If blockchain height > checkpoint:
+          - Only process NEW blocks (e.g., blocks 101-110)
+          - Update UTXO set incrementally
+          - Save new checkpoint
+        * If blockchain height == checkpoint:
+          - Already synced, ready to go!
+      
+   D. UTXO State Persistence
+      - All UTXOs stored in RocksDB
+      - Survives program shutdown/restart
+      - Fast lookup by transaction ID + index
+      - Key format: "txId:index"
+      - Value format: "txId|index|address|amount"
+
+4. Load Mempool
+   🔲 TODO
+   - Load pending/unconfirmed transactions
+   - Validate transactions against current UTXO set
+   - Maintain transaction pool for mining
+
+========== Key Features Implemented ==========
+
+✅ RocksDB Integration
+   - Persistent storage for UTXO set
+   - Checkpoint/state management
+   - Fast key-value lookups
+
+✅ Checkpoint System
+   - saveCheckpoint(blockHeight) - Save sync progress
+   - getCheckpoint() - Get last processed block
+   - Enables quick restarts without full resync
+
+✅ UTXO Management
+   - addUTXO() - Add new unspent outputs
+   - removeUTXO() - Remove spent outputs
+   - getUTXOsForAddress() - Query by address
+   - getUTXOCount() - Get total UTXO count
+   - clearAllUTXOs() - Resync from genesis
+
+✅ Wallet Management (Node class)
+   - getWallets_() - Load all wallets from RocksDB
+   - Uses prefix "wallet:" for storage
+   - Serialize/deserialize wallet data
+
+========== Data Flow Summary ==========
+
+Program Shutdown → RocksDB persists:
+  - UTXO set (all unspent outputs)
+  - Checkpoint (last processed block height)
+  - Wallet data
+
+Program Restart → Fast recovery:
+  - Read checkpoint
+  - Load existing UTXO set (cached)
+  - Only process new blocks
+  - Continue from where it left off
+
+Benefits:
+  ⚡ Fast startup (no full blockchain rescan)
+  💾 Persistent state across restarts
+  🔄 Incremental updates only
+  📊 Always know sync status
+
+
+to do next :
+
+understand all and
+implement mempool
