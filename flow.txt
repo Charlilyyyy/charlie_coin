@@ -102,5 +102,6 @@ Benefits:
 
 to do next :
 
-understand all and
-implement mempool
+understand all and implement mempool
+implement sync with peer
+make sure this app can be communicate with other apps (tcp/ip , dns, etc)
