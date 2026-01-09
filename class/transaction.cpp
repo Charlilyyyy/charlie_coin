@@ -1,115 +1,115 @@
 #include "./header/transaction.h"
-#include <ctime>
+#include <openssl/sha.h>
+#include <iostream>
 #include <sstream>
 #include <iomanip>
-#include <openssl/ecdsa.h>
-#include <openssl/obj_mac.h>
-#include <openssl/evp.h>
-#include <openssl/sha.h>
 #include <stdexcept>
-#include <algorithm>
 
-// Constructor: generates txID and signature
-Transaction::Transaction(const std::string& sender,
-                         const std::string& receiver,
-                         double amount,
-                         EVP_PKEY* privateKey)
-    : sender_(sender), receiver_(receiver), amount_(amount)
+// ------------------- Constructor -------------------
+Transaction::Transaction(int32_t version_, uint32_t lockTime_)
+    : version(version_), lockTime(lockTime_) 
 {
-    timestamp_ = static_cast<uint32_t>(time(nullptr));
-
-    // Generate transaction hash
-    tx_id_ = generateTxIDFromData();
-
-    // Sign transaction using private key
-    signature_ = generateSignature(privateKey);
+    txid.fill(0);
 }
 
-// Compute SHA256 of serialized transaction data
-std::array<uint8_t, 32> Transaction::generateTxIDFromData() const {
-    std::ostringstream oss;
-    oss << sender_ << receiver_ << amount_ << timestamp_;
-    std::string txData = oss.str();
-
-    std::array<uint8_t, 32> hash;
-    SHA256(reinterpret_cast<const unsigned char*>(txData.data()), txData.size(), hash.data());
-
-    return hash;
+// ------------------- Add Input/Output -------------------
+void Transaction::addInput(const TxInput& input) {
+    vin.push_back(input);
 }
 
-// Generate ECDSA signature of txID using sender's private key
-std::array<uint8_t, 64> Transaction::generateSignature(EVP_PKEY* privateKey) {
-    if (!privateKey) throw std::runtime_error("Private key is null");
+void Transaction::addOutput(const TxOutput& output) {
+    vout.push_back(output);
+}
 
-    std::array<uint8_t, 64> sig{};
-    
-    // Get EC_KEY from EVP_PKEY
-    const EC_KEY* ecKey = EVP_PKEY_get0_EC_KEY(privateKey);
-    if (!ecKey) throw std::runtime_error("Failed to get EC_KEY from EVP_PKEY");
+// ------------------- Serialize Transaction -------------------
+std::vector<uint8_t> Transaction::serialize() const {
+    std::vector<uint8_t> out;
 
-    // Sign txID hash
-    ECDSA_SIG* ecdsaSig = ECDSA_do_sign(tx_id_.data(), tx_id_.size(), const_cast<EC_KEY*>(ecKey));
-    if (!ecdsaSig) throw std::runtime_error("ECDSA signing failed");
+    // Version (little-endian)
+    out.push_back(version & 0xFF);
+    out.push_back((version >> 8) & 0xFF);
+    out.push_back((version >> 16) & 0xFF);
+    out.push_back((version >> 24) & 0xFF);
 
-    // Extract r and s
-    const BIGNUM* r;
-    const BIGNUM* s;
-    ECDSA_SIG_get0(ecdsaSig, &r, &s);
+    // Input count (varint simplified: assume < 0xFD)
+    out.push_back(static_cast<uint8_t>(vin.size()));
 
-    int r_len = BN_num_bytes(r);
-    int s_len = BN_num_bytes(s);
-
-    if (r_len > 32 || s_len > 32) {
-        ECDSA_SIG_free(ecdsaSig);
-        throw std::runtime_error("Signature component too long for 32 bytes");
+    // Inputs
+    for (const auto& in : vin) {
+        // prevTxID
+        out.insert(out.end(), in.prevTxID.begin(), in.prevTxID.end());
+        // vout
+        out.push_back(in.vout & 0xFF);
+        out.push_back((in.vout >> 8) & 0xFF);
+        out.push_back((in.vout >> 16) & 0xFF);
+        out.push_back((in.vout >> 24) & 0xFF);
+        // scriptSig length
+        out.push_back(static_cast<uint8_t>(in.scriptSig.size()));
+        // scriptSig
+        out.insert(out.end(), in.scriptSig.begin(), in.scriptSig.end());
+        // sequence
+        out.push_back(in.sequence & 0xFF);
+        out.push_back((in.sequence >> 8) & 0xFF);
+        out.push_back((in.sequence >> 16) & 0xFF);
+        out.push_back((in.sequence >> 24) & 0xFF);
     }
 
-    // Zero-fill sig first
-    sig.fill(0);
+    // Output count (varint simplified)
+    out.push_back(static_cast<uint8_t>(vout.size()));
 
-    // Copy r and s to sig buffer, right-aligned
-    BN_bn2binpad(r, sig.data() + (32 - r_len), r_len);        // r
-    BN_bn2binpad(s, sig.data() + 32 + (32 - s_len), s_len);   // s
-
-    ECDSA_SIG_free(ecdsaSig);
-    return sig;
-}
-
-
-// Getter for transaction ID
-uint256 Transaction::getTxID() const { return tx_id_; }
-
-// Getter for sender address
-std::string Transaction::getSender() const { return sender_; }
-
-// Getter for receiver address
-std::string Transaction::getReceiver() const { return receiver_; }
-
-// Getter for amount
-double Transaction::getAmount() const { return amount_; }
-
-// Getter for timestamp
-uint32_t Transaction::getTimestamp() const { return timestamp_; }
-
-// Getter for raw signature
-std::array<uint8_t, 64> Transaction::getSignature() const { return signature_; }
-
-// Getter for signature in hex string
-std::string Transaction::getSignatureHex() const {
-    std::ostringstream oss;
-    for (auto byte : signature_) {
-        oss << std::hex << std::setw(2) << std::setfill('0') << (int)byte;
+    // Outputs
+    for (const auto& outp : vout) {
+        // value (8 bytes, little-endian)
+        for (int i = 0; i < 8; ++i) {
+            out.push_back((outp.value >> (8 * i)) & 0xFF);
+        }
+        // scriptPubKey length
+        out.push_back(static_cast<uint8_t>(outp.scriptPubKey.size()));
+        // scriptPubKey
+        out.insert(out.end(), outp.scriptPubKey.begin(), outp.scriptPubKey.end());
     }
-    return oss.str();
+
+    // lockTime
+    out.push_back(lockTime & 0xFF);
+    out.push_back((lockTime >> 8) & 0xFF);
+    out.push_back((lockTime >> 16) & 0xFF);
+    out.push_back((lockTime >> 24) & 0xFF);
+
+    return out;
 }
 
-// Print transaction details
+// ------------------- Compute txid -------------------
+void Transaction::computeTxID() {
+    auto ser = serialize();
+    std::array<uint8_t, 32> hash1, hash2;
+
+    // First SHA256
+    SHA256(ser.data(), ser.size(), hash1.data());
+    // Second SHA256
+    SHA256(hash1.data(), hash1.size(), hash2.data());
+
+    txid = hash2;
+}
+
+// ------------------- Print Transaction -------------------
 void Transaction::printTransaction() const {
-    std::cout << "Sender: " << sender_ << "\n"
-              << "Receiver: " << receiver_ << "\n"
-              << "Amount: " << amount_ << "\n"
-              << "Timestamp: " << timestamp_ << "\n"
-              << "TxID: ";
-    for (auto b : tx_id_) std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b;
-    std::cout << "\nSignature: " << getSignatureHex() << "\n";
+    std::cout << "Transaction Info:\n";
+    std::cout << "Version: " << version << "\n";
+    std::cout << "Inputs (" << vin.size() << "):\n";
+    for (size_t i = 0; i < vin.size(); ++i) {
+        std::cout << "  Input " << i << ": prevTxID = ";
+        for (auto b : vin[i].prevTxID) std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b;
+        std::cout << ", vout = " << vin[i].vout << "\n";
+    }
+
+    std::cout << "Outputs (" << vout.size() << "):\n";
+    for (size_t i = 0; i < vout.size(); ++i) {
+        std::cout << "  Output " << i << ": value = " << vout[i].value
+                  << ", scriptPubKeyLen = " << vout[i].scriptPubKey.size() << "\n";
+    }
+
+    std::cout << "LockTime: " << lockTime << "\n";
+    std::cout << "TxID: ";
+    for (auto b : txid) std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b;
+    std::cout << "\n";
 }

@@ -20,6 +20,8 @@ add_executable(main
     ${CMAKE_SOURCE_DIR}/class/wallet.cpp
     ${CMAKE_SOURCE_DIR}/class/utxo.cpp
     ${CMAKE_SOURCE_DIR}/class/transaction.cpp
+    ${CMAKE_SOURCE_DIR}/class/blockheader.cpp
+    ${CMAKE_SOURCE_DIR}/class/block.cpp
     ${CMAKE_SOURCE_DIR}/class/key_seeder.cpp
 )
 

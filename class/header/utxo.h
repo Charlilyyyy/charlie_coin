@@ -1,32 +1,35 @@
 #ifndef UTXO_H
 #define UTXO_H
 
-#include <string>
+#include <array>
 #include <vector>
+#include <cstdint>
 #include <rocksdb/db.h>
 #include <rocksdb/options.h>
 #include <iostream>
 
+using uint256 = std::array<uint8_t, 32>; // 32-byte txid
+
 struct UTXOEntry {
-    std::string txId;       // Transaction ID
-    int index;              // Output index
-    std::string address;    // Recipient address
-    double amount;          // Amount
+    uint256 txId;               // Transaction ID (hash)
+    uint32_t index;             // Output index
+    std::vector<uint8_t> scriptPubKey; // Locking script (recipient)
+    int64_t value;              // Amount in satoshis
 
     UTXOEntry() = default;
-    UTXOEntry(const std::string& tid, int idx, const std::string& addr, double amt)
-        : txId(tid), index(idx), address(addr), amount(amt) {}
+    UTXOEntry(const uint256& tid, uint32_t idx, const std::vector<uint8_t>& script, int64_t val)
+        : txId(tid), index(idx), scriptPubKey(script), value(val) {}
 
     // Serialize for RocksDB
-    std::string serialize() const;
-    static UTXOEntry deserialize(const std::string& data);
+    std::vector<uint8_t> serialize() const;
+    static UTXOEntry deserialize(const std::vector<uint8_t>& data);
 };
 
 class UTXOSet {
 private:
     rocksdb::DB* db;
 
-    static std::string buildKey(const std::string& txId, int index);
+    static std::string buildKey(const uint256& txId, uint32_t index);
 
 public:
     UTXOSet(const std::string& dbPath);
@@ -36,29 +39,21 @@ public:
     void addUTXO(const UTXOEntry& utxo);
 
     // Remove spent UTXO
-    void removeUTXO(const std::string& txId, int index);
+    void removeUTXO(const uint256& txId, uint32_t index);
 
     // Check existence
-    bool exists(const std::string& txId, int index) const;
+    bool exists(const uint256& txId, uint32_t index) const;
 
-    // Get all UTXOs for an address
-    std::vector<UTXOEntry> getUTXOsForAddress(const std::string& address) const;
+    // Get all UTXOs for a given scriptPubKey
+    std::vector<UTXOEntry> getUTXOsForScript(const std::vector<uint8_t>& script) const;
 
     // Print all UTXOs
     void printAllUTXOs() const;
 
-    // ========== Checkpoint/State Management ==========
-    
-    // Save the last processed block height (checkpoint)
+    // Checkpoint / state management
     void saveCheckpoint(int blockHeight);
-    
-    // Get the last processed block height (-1 if no checkpoint exists)
     int getCheckpoint() const;
-    
-    // Clear all UTXOs (for resync from genesis)
     void clearAllUTXOs();
-    
-    // Get total UTXO count
     int getUTXOCount() const;
 };
 

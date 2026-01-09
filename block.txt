@@ -1,0 +1,18 @@
+Block Header / Metadata
+- Block number (height): Which block it is in the chain.
+- Timestamp: When the block was created.
+- Previous block hash: A reference to the hash of the previous block, which links the blocks together.
+- Merkle root: A single hash that represents all transactions in the block (used for fast verification).
+- Nonce: A number used in Proof of Work (for mining).
+
+Transactions / Data
+- All the transactions included in the block. In Bitcoin, this is usually a list of money transfers.
+- In Ethereum or smart contract blockchains, this can also include smart contract interactions or state changes.
+
+Hash of the block
+- The block’s own unique hash is calculated from the header and transaction data. This ensures integrity—if someone changes a block, the hash changes, breaking the chain.
+
+Optional extras depending on blockchain
+- Miner info / reward (who mined the block).
+- Difficulty target (for Proof of Work).
+- State root (Ethereum stores the current state of all accounts).

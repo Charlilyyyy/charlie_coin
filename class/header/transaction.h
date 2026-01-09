@@ -1,49 +1,55 @@
 #ifndef TRANSACTION_H
 #define TRANSACTION_H
 
-#include <iostream>
-#include <vector>
-#include <string>
-#include <array>
 #include <cstdint>
-#include <openssl/evp.h> // For EVP_PKEY
-#include <openssl/sha.h> // For SHA256
+#include <vector>
+#include <array>
+#include <openssl/evp.h>
+#include <openssl/sha.h>
+#include "./utxo.h"  // For uint256
 
 using uint256 = std::array<unsigned char, 32>;
 
-class Transaction {
-public:
-    // Constructor for creating a transaction
-    // privateKey is used to generate a real signature
-    Transaction(const std::string& sender,
-                const std::string& receiver,
-                double amount,
-                EVP_PKEY* privateKey);
+// ----------------- Transaction Input -----------------
+struct TxInput {
+    uint256 prevTxID;           // Previous transaction hash
+    uint32_t vout;              // Index of output in previous tx
+    std::vector<uint8_t> scriptSig;  // Signature script (unlocking)
+    uint32_t sequence;          // Normally 0xFFFFFFFF
 
-    // Getters
-    uint256 getTxID() const;
-    std::string getSender() const;
-    std::string getReceiver() const;
-    double getAmount() const;
-    uint32_t getTimestamp() const;
-    std::array<uint8_t, 64> getSignature() const;
-    std::string getSignatureHex() const;
-
-    // Utility function to print transaction details
-    void printTransaction() const;
-
-private:
-    // Transaction data
-    uint256 tx_id_;                 // SHA256 hash of transaction data
-    std::string sender_;            // sender address (derived from public key)
-    std::string receiver_;          // receiver address
-    double amount_;
-    uint32_t timestamp_;
-    std::array<uint8_t, 64> signature_;  // ECDSA signature (64 bytes: r||s)
-
-    // Internal functions
-    uint256 generateTxIDFromData() const;               // compute txID as SHA256 of transaction fields
-    std::array<uint8_t, 64> generateSignature(EVP_PKEY* privateKey);  // generate ECDSA signature
+    TxInput() : vout(0), sequence(0xFFFFFFFF) {}
 };
 
-#endif
+// ----------------- Transaction Output -----------------
+struct TxOutput {
+    int64_t value;                 // Amount in satoshis
+    std::vector<uint8_t> scriptPubKey; // Locking script (recipient)
+};
+
+// ----------------- Transaction -----------------
+class Transaction {
+public:
+    int32_t version;                 // Transaction version
+    std::vector<TxInput> vin;        // Inputs
+    std::vector<TxOutput> vout;      // Outputs
+    uint32_t lockTime;               // Locktime
+    uint256 txid;                     // Transaction ID (hash)
+
+    // Constructors
+    Transaction(int32_t version = 1, uint32_t lockTime = 0);
+
+    // Add input/output
+    void addInput(const TxInput& input);
+    void addOutput(const TxOutput& output);
+
+    // Serialize transaction (for txid computation or network)
+    std::vector<uint8_t> serialize() const;
+
+    // Compute double SHA256 txid from serialized tx
+    void computeTxID();
+
+    // Utility: print transaction info
+    void printTransaction() const;
+};
+
+#endif // TRANSACTION_H

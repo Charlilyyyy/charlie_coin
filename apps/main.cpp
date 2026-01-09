@@ -10,25 +10,66 @@
 #include "../struct/walletStruct.cpp"
 
 #include "../class/header/transaction.h"
+#include "../class/header/block.h"
+#include "../class/header/blockheader.h"
 #include "../class/header/key_seeder.h"
 
 int main(){
     std::cout << "Starting up .. " << std::endl;
     std::cout << "Charlie Coin Software" << std::endl << std::endl;
 
-    // Custom deleter for EVP_PKEY
-    auto evpDeleter = [](EVP_PKEY* p) { if (p) EVP_PKEY_free(p); };
+    std::cout << "========== Demo: Block ==========\n" << std::endl;
 
-    // Create unique_ptr for EVP_PKEY
-    std::unique_ptr<EVP_PKEY, decltype(evpDeleter)> pkey(
-        KeySeeder::generateTestKey(), evpDeleter
-    );
+    // ------------------- 1. Previous block hash (dummy for genesis) -------------------
+    std::array<uint8_t, 32> prevHash{};
+    prevHash.fill(0); // Genesis block has all zeros
 
-    std::cout << "Test EC key generated\n";
+    // ------------------- 2. Dummy Merkle root -------------------
+    std::array<uint8_t, 32> merkleRoot{};
+    merkleRoot.fill(1); // Temporary placeholder, will replace with real Merkle root later
 
-    // Now pkey will automatically be freed when it goes out of scope
-    Transaction tx("AliceTestPK", "BobTestPK", 123.45, pkey.get());
-    tx.printTransaction();
+    // ------------------- 3. Create BlockHeader -------------------
+    int32_t version = 1;
+    uint32_t timestamp = static_cast<uint32_t>(time(nullptr));
+    uint32_t bits = 0x1d00ffff; // Bitcoin genesis difficulty bits
+    uint32_t nonce = 0;
+
+    BlockHeader header(version, prevHash, merkleRoot, timestamp, bits, nonce);
+
+    // ------------------- 4. Create Block -------------------
+    Block block(header);
+
+    // ------------------- 5. Create dummy transactions -------------------
+    Transaction tx1(1, 0); // version 1, lockTime 0
+    Transaction tx2(1, 0);
+
+    // Add a simple output to tx1
+    TxOutput out1;
+    out1.value = 5000000000; // 50 BTC in satoshis
+    out1.scriptPubKey = {0x51}; // OP_TRUE for dummy
+    tx1.addOutput(out1);
+
+    // Add a simple output to tx2
+    TxOutput out2;
+    out2.value = 1000000000; // 10 BTC in satoshis
+    out2.scriptPubKey = {0x51};
+    tx2.addOutput(out2);
+
+    // Compute transaction IDs
+    tx1.computeTxID();
+    tx2.computeTxID();
+
+    // ------------------- 6. Add transactions to block -------------------
+    block.addTransaction(tx1);
+    block.addTransaction(tx2);
+
+    // ------------------- 7. Compute block hash -------------------
+    block.computeBlockHash();
+
+    // ------------------- 8. Print block info -------------------
+    block.printBlock();
+
+    std::cout << "========== Demo Block complete! ==========" << std::endl;
 
     // std::cout << "My node id : 1" << std::endl;
     // std::cout << "Loading peer nodes" << std::endl;

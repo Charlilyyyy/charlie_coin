@@ -1,29 +1,81 @@
 #include "./header/utxo.h"
 #include <sstream>
+#include <iomanip>
 
-// ------------------- UTXOEntry serialization -------------------
-std::string UTXOEntry::serialize() const {
-    return txId + "|" + std::to_string(index) + "|" + address + "|" + std::to_string(amount);
+// ------------------- Helpers -------------------
+
+// Convert uint256 to hex string for keys / debug
+static std::string toHex(const uint256& arr) {
+    std::stringstream ss;
+    for (auto b : arr) ss << std::hex << std::setw(2) << std::setfill('0') << (int)b;
+    return ss.str();
 }
 
-UTXOEntry UTXOEntry::deserialize(const std::string& data) {
-    std::istringstream ss(data);
-    std::string token;
-    UTXOEntry u;
+// Convert little-endian int to 4 bytes
+static void writeLE32(uint32_t val, std::vector<uint8_t>& out) {
+    out.push_back(val & 0xFF);
+    out.push_back((val >> 8) & 0xFF);
+    out.push_back((val >> 16) & 0xFF);
+    out.push_back((val >> 24) & 0xFF);
+}
 
-    std::getline(ss, u.txId, '|');
-    std::getline(ss, token, '|');
-    u.index = std::stoi(token);
-    std::getline(ss, u.address, '|');
-    std::getline(ss, token, '|');
-    u.amount = std::stod(token);
+// Convert little-endian int64 to 8 bytes
+static void writeLE64(int64_t val, std::vector<uint8_t>& out) {
+    for (int i = 0; i < 8; ++i)
+        out.push_back((val >> (8 * i)) & 0xFF);
+}
+
+// ------------------- UTXOEntry serialization -------------------
+
+std::vector<uint8_t> UTXOEntry::serialize() const {
+    std::vector<uint8_t> out;
+
+    // txId
+    out.insert(out.end(), txId.begin(), txId.end());
+
+    // index (little-endian)
+    writeLE32(index, out);
+
+    // scriptPubKey length + bytes
+    writeLE32(static_cast<uint32_t>(scriptPubKey.size()), out);
+    out.insert(out.end(), scriptPubKey.begin(), scriptPubKey.end());
+
+    // value
+    writeLE64(value, out);
+
+    return out;
+}
+
+UTXOEntry UTXOEntry::deserialize(const std::vector<uint8_t>& data) {
+    UTXOEntry u;
+    size_t offset = 0;
+
+    // txId
+    std::copy(data.begin(), data.begin() + 32, u.txId.begin());
+    offset += 32;
+
+    // index
+    u.index = data[offset] | (data[offset+1]<<8) | (data[offset+2]<<16) | (data[offset+3]<<24);
+    offset += 4;
+
+    // scriptPubKey length
+    uint32_t scriptLen = data[offset] | (data[offset+1]<<8) | (data[offset+2]<<16) | (data[offset+3]<<24);
+    offset += 4;
+
+    // scriptPubKey bytes
+    u.scriptPubKey.insert(u.scriptPubKey.end(), data.begin()+offset, data.begin()+offset+scriptLen);
+    offset += scriptLen;
+
+    // value
+    u.value = 0;
+    for (int i = 0; i < 8; ++i) u.value |= static_cast<int64_t>(data[offset + i]) << (8 * i);
 
     return u;
 }
 
 // ------------------- Helper for key -------------------
-std::string UTXOSet::buildKey(const std::string& txId, int index) {
-    return txId + ":" + std::to_string(index);
+std::string UTXOSet::buildKey(const uint256& txId, uint32_t index) {
+    return toHex(txId) + ":" + std::to_string(index);
 }
 
 // ------------------- UTXOSet methods -------------------
@@ -45,29 +97,35 @@ UTXOSet::~UTXOSet() {
 
 void UTXOSet::addUTXO(const UTXOEntry& utxo) {
     std::string key = buildKey(utxo.txId, utxo.index);
-    rocksdb::Status s = db->Put(rocksdb::WriteOptions(), key, utxo.serialize());
+    std::vector<uint8_t> value = utxo.serialize();
+    rocksdb::Status s = db->Put(rocksdb::WriteOptions(), key, rocksdb::Slice(reinterpret_cast<const char*>(value.data()), value.size()));
     if(!s.ok()) std::cerr << "Add UTXO failed: " << s.ToString() << std::endl;
 }
 
-void UTXOSet::removeUTXO(const std::string& txId, int index) {
+void UTXOSet::removeUTXO(const uint256& txId, uint32_t index) {
     std::string key = buildKey(txId, index);
     rocksdb::Status s = db->Delete(rocksdb::WriteOptions(), key);
     if(!s.ok()) std::cerr << "Remove UTXO failed: " << s.ToString() << std::endl;
 }
 
-bool UTXOSet::exists(const std::string& txId, int index) const {
+bool UTXOSet::exists(const uint256& txId, uint32_t index) const {
     std::string key = buildKey(txId, index);
     std::string value;
     rocksdb::Status s = db->Get(rocksdb::ReadOptions(), key, &value);
     return s.ok();
 }
 
-std::vector<UTXOEntry> UTXOSet::getUTXOsForAddress(const std::string& address) const {
+std::vector<UTXOEntry> UTXOSet::getUTXOsForScript(const std::vector<uint8_t>& script) const {
     std::vector<UTXOEntry> result;
     rocksdb::Iterator* it = db->NewIterator(rocksdb::ReadOptions());
     for(it->SeekToFirst(); it->Valid(); it->Next()) {
-        UTXOEntry u = UTXOEntry::deserialize(it->value().ToString());
-        if(u.address == address) result.push_back(u);
+        // skip checkpoint metadata
+        if(it->key().ToString() == "_checkpoint_") continue;
+
+        std::string valStr = it->value().ToString();
+        std::vector<uint8_t> valBytes(valStr.begin(), valStr.end());
+        UTXOEntry u = UTXOEntry::deserialize(valBytes);
+        if(u.scriptPubKey == script) result.push_back(u);
     }
     delete it;
     return result;
@@ -77,74 +135,59 @@ void UTXOSet::printAllUTXOs() const {
     rocksdb::Iterator* it = db->NewIterator(rocksdb::ReadOptions());
     std::cout << "Current UTXO set:\n";
     for(it->SeekToFirst(); it->Valid(); it->Next()) {
-        // Skip checkpoint metadata
         if(it->key().ToString() == "_checkpoint_") continue;
-        
-        UTXOEntry u = UTXOEntry::deserialize(it->value().ToString());
-        std::cout << "TxID: " << u.txId 
-                  << ", Index: " << u.index 
-                  << ", Addr: " << u.address 
-                  << ", Amount: " << u.amount << std::endl;
+
+        std::string valStr = it->value().ToString();
+        std::vector<uint8_t> valBytes(valStr.begin(), valStr.end());
+        UTXOEntry u = UTXOEntry::deserialize(valBytes);
+
+        std::cout << "TxID: " << toHex(u.txId)
+                  << ", Index: " << u.index
+                  << ", Value: " << u.value
+                  << ", ScriptLen: " << u.scriptPubKey.size()
+                  << std::endl;
     }
     delete it;
 }
 
-// ========== Checkpoint/State Management Implementation ==========
-
+// ------------------- Checkpoint -------------------
 void UTXOSet::saveCheckpoint(int blockHeight) {
     std::string key = "_checkpoint_";
     std::string value = std::to_string(blockHeight);
     rocksdb::Status s = db->Put(rocksdb::WriteOptions(), key, value);
-    if(!s.ok()) {
-        std::cerr << "Failed to save checkpoint: " << s.ToString() << std::endl;
-    } else {
-        std::cout << "✓ Checkpoint saved at block height: " << blockHeight << std::endl;
-    }
+    if(!s.ok()) std::cerr << "Failed to save checkpoint: " << s.ToString() << std::endl;
 }
 
 int UTXOSet::getCheckpoint() const {
     std::string key = "_checkpoint_";
     std::string value;
     rocksdb::Status s = db->Get(rocksdb::ReadOptions(), key, &value);
-    
-    if(s.ok()) {
-        return std::stoi(value);
-    } else if(s.IsNotFound()) {
-        return -1; // No checkpoint exists (first run)
-    } else {
-        std::cerr << "Error reading checkpoint: " << s.ToString() << std::endl;
-        return -1;
-    }
+
+    if(s.ok()) return std::stoi(value);
+    if(s.IsNotFound()) return -1;
+    std::cerr << "Error reading checkpoint: " << s.ToString() << std::endl;
+    return -1;
 }
 
 void UTXOSet::clearAllUTXOs() {
     rocksdb::Iterator* it = db->NewIterator(rocksdb::ReadOptions());
     int count = 0;
-    
     for(it->SeekToFirst(); it->Valid(); it->Next()) {
-        std::string key = it->key().ToString();
-        // Don't delete checkpoint metadata
-        if(key != "_checkpoint_") {
-            db->Delete(rocksdb::WriteOptions(), key);
+        if(it->key().ToString() != "_checkpoint_") {
+            db->Delete(rocksdb::WriteOptions(), it->key());
             count++;
         }
     }
     delete it;
-    
-    std::cout << "Cleared " << count << " UTXOs from database" << std::endl;
+    std::cout << "Cleared " << count << " UTXOs from database\n";
 }
 
 int UTXOSet::getUTXOCount() const {
     rocksdb::Iterator* it = db->NewIterator(rocksdb::ReadOptions());
     int count = 0;
-    
     for(it->SeekToFirst(); it->Valid(); it->Next()) {
-        // Skip checkpoint metadata
-        if(it->key().ToString() != "_checkpoint_") {
-            count++;
-        }
+        if(it->key().ToString() != "_checkpoint_") count++;
     }
     delete it;
-    
     return count;
 }
