@@ -1,29 +1,39 @@
-#ifndef NODE_H
-#define NODE_H
-
-#include <iostream>
+#pragma once
 #include <vector>
-
-#include "./wallet.h"
-#include "./transaction.h"
-#include "./blockchain.h"
-#include "./network.h"
-#include "./utxo.h"
+#include <string>
+#include <iostream>
+#include "block.h"
+#include "transaction.h"
+#include "utxo.h"
+#include "mempool.h"
+#include "merkle.h"
 
 class Node {
-    private:
-        std::string NodeId_;
-        std::vector<Wallet> wallet_;
-        BlockChain blockchain_;
-        std::vector<Transaction> mempool_;
-        UTXOSet utxoSet_;
-        // Network network_;
+private:
+    std::vector<Block> blockchain;   // Chain of blocks
+    Mempool mempool;                 // Unconfirmed transactions
+    UTXOSet utxoSet;                 // Track spendable outputs
+    uint32_t blockBits;              // Mining difficulty (bits)
 
-        // getters
-        std::string getNodeId_() const;
-        std::vector<Wallet> getWallets_() const;
-        BlockChain getBlockChain_() const;
-        std::vector<Transaction> getMempool_() const;
+    // Helper: create coinbase transaction for miner reward
+    Transaction createCoinbaseTx(const std::vector<uint8_t>& minerScriptPubKey, int64_t rewardSatoshis);
+
+public:
+    Node(const std::string& utxoDBPath, uint32_t difficultyBits);
+    ~Node();
+
+    // Receive a new transaction into mempool
+    void receiveTransaction(const Transaction& tx);
+
+    // Build a block from mempool and mine it
+    void createAndMineBlock(const std::vector<uint8_t>& minerScriptPubKey, size_t maxTxPerBlock = 10);
+
+    // Add a mined or received block to blockchain
+    bool addBlock(const Block& block);
+
+    // Print the blockchain
+    void printBlockchain() const;
+
+    // Print mempool
+    void printMempool() const;
 };
-
-#endif

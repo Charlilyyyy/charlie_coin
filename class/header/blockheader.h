@@ -14,7 +14,6 @@ public:
     // Constructor
     BlockHeader(int32_t version,
                 const std::array<uint8_t, 32>& prevBlockHash,
-                const std::array<uint8_t, 32>& merkleRoot,
                 uint32_t timestamp,
                 uint32_t bits,
                 uint32_t nonce = 0);

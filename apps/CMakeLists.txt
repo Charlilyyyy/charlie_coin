@@ -23,6 +23,7 @@ add_executable(main
     ${CMAKE_SOURCE_DIR}/class/blockheader.cpp
     ${CMAKE_SOURCE_DIR}/class/block.cpp
     ${CMAKE_SOURCE_DIR}/class/key_seeder.cpp
+    ${CMAKE_SOURCE_DIR}/class/merkle.cpp
 )
 
 # Include directories

@@ -12,6 +12,23 @@ Transaction::Transaction(int32_t version_, uint32_t lockTime_)
     txid.fill(0);
 }
 
+Transaction::Transaction(int64_t rewardSatoshis, const std::vector<uint8_t>& minerScriptPubKey)
+    : version(1), lockTime(0)
+{
+    // Coinbase has no inputs
+    vin.clear();
+
+    // One output: to miner
+    TxOutput out;
+    out.value = rewardSatoshis;
+    out.scriptPubKey = minerScriptPubKey;
+    vout.push_back(out);
+
+    // Compute txid
+    computeTxID();
+}
+
+
 // ------------------- Add Input/Output -------------------
 void Transaction::addInput(const TxInput& input) {
     vin.push_back(input);

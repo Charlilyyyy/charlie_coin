@@ -1,4 +1,5 @@
 #include "./header/block.h"
+#include "./header/merkle.h"
 #include <openssl/sha.h>
 #include <iostream>
 #include <iomanip>
@@ -74,6 +75,15 @@ void Block::computeBlockHash() {
     SHA256(hash1.data(), hash1.size(), hash2.data());
 
     blockHash = hash2;
+}
+
+// ------------------- Update Merkle Root -------------------
+void Block::updateMerkleRoot() {
+    std::vector<uint256> txHashes;
+    for (const auto& tx : transactions) {
+        txHashes.push_back(tx.txid);
+    }
+    header.merkleRoot_ = MerkleTree::computeMerkleRoot(txHashes);
 }
 
 // ------------------- Print Block -------------------

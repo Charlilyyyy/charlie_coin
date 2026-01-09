@@ -28,6 +28,9 @@ public:
 
     // Print block info
     void printBlock() const;
+
+    // Add in public section
+    void updateMerkleRoot();
 };
 
 #endif // BLOCK_H

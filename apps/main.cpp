@@ -24,22 +24,19 @@ int main(){
     std::array<uint8_t, 32> prevHash{};
     prevHash.fill(0); // Genesis block has all zeros
 
-    // ------------------- 2. Dummy Merkle root -------------------
-    std::array<uint8_t, 32> merkleRoot{};
-    merkleRoot.fill(1); // Temporary placeholder, will replace with real Merkle root later
 
-    // ------------------- 3. Create BlockHeader -------------------
+    // ------------------- 2. Create BlockHeader -------------------
     int32_t version = 1;
     uint32_t timestamp = static_cast<uint32_t>(time(nullptr));
     uint32_t bits = 0x1d00ffff; // Bitcoin genesis difficulty bits
     uint32_t nonce = 0;
 
-    BlockHeader header(version, prevHash, merkleRoot, timestamp, bits, nonce);
+    BlockHeader header(version, prevHash, timestamp, bits, nonce);
 
-    // ------------------- 4. Create Block -------------------
+    // ------------------- 3. Create Block -------------------
     Block block(header);
 
-    // ------------------- 5. Create dummy transactions -------------------
+    // ------------------- 4. Create dummy transactions -------------------
     Transaction tx1(1, 0); // version 1, lockTime 0
     Transaction tx2(1, 0);
 
@@ -59,9 +56,12 @@ int main(){
     tx1.computeTxID();
     tx2.computeTxID();
 
-    // ------------------- 6. Add transactions to block -------------------
+    // ------------------- 5. Add transactions to block -------------------
     block.addTransaction(tx1);
     block.addTransaction(tx2);
+
+    // ------------------- 6. Compute merkle root -------------------
+    block.updateMerkleRoot();
 
     // ------------------- 7. Compute block hash -------------------
     block.computeBlockHash();

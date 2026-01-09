@@ -38,6 +38,9 @@ public:
     // Constructors
     Transaction(int32_t version = 1, uint32_t lockTime = 0);
 
+    // Coinbase constructor: no inputs, only one output to miner
+    Transaction(int64_t rewardSatoshis, const std::vector<uint8_t>& minerScriptPubKey);
+
     // Add input/output
     void addInput(const TxInput& input);
     void addOutput(const TxOutput& output);

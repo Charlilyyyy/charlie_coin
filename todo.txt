@@ -1,0 +1,44 @@
+Blockchain Development Roadmap
+
+1. Implement Merkle Root
+   - Compute the Merkle root from all transaction IDs in the block.
+   - Replace the dummy Merkle root in BlockHeader with the computed one.
+
+2. Implement Block Mining
+   - Mining finds a nonce so that blockHash < target (derived from bits_).
+   - Loop:
+       - Set nonce = 0.
+       - Compute block hash.
+       - If hash < target → success. Else increment nonce and repeat.
+   - Update header.nonce_ for each attempt.
+
+3. Implement Transaction Verification
+   - Verify all inputs exist in the UTXOSet.
+   - Check that sum of inputs ≥ sum of outputs.
+   - Verify ECDSA signatures.
+   - Reject invalid transactions before adding them to a block.
+
+4. Update UTXOSet after Adding a Block
+   - Loop through all block transactions:
+       - Remove spent UTXOs (inputs).
+       - Add new UTXOs (outputs).
+   - Save checkpoint (block height) to RocksDB.
+
+5. Implement Blockchain Class
+   - Maintain a list or database of blocks.
+   - Functions:
+       - addBlock(Block block) → validate + mine + update UTXOSet.
+       - getBlock(height) → retrieve a block.
+       - getLatestBlock() → get the chain tip.
+
+6. Optional: Networking
+   - Broadcast blocks and transactions to other nodes.
+   - For now, simulate a single-node chain in memory or RocksDB.
+
+7. Testing
+   - Create a main.cpp that:
+       - Creates the genesis block.
+       - Adds some transactions.
+       - Mines the block.
+       - Updates the UTXOSet.
+       - Prints chain and UTXO state.

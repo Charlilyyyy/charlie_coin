@@ -6,14 +6,12 @@
 // Constructor
 BlockHeader::BlockHeader(int32_t version,
                          const std::array<uint8_t, 32>& prevBlockHash,
-                         const std::array<uint8_t, 32>& merkleRoot,
                          uint32_t timestamp,
                          uint32_t bits,
                          uint32_t nonce)
 {
     version_ = version;
     prevBlockHash_ = prevBlockHash;
-    merkleRoot_ = merkleRoot;
     timestamp_ = timestamp;
     bits_ = bits;
     nonce_ = nonce;
